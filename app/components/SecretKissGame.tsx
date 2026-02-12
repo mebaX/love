@@ -5,6 +5,13 @@ import Image from 'next/image';
 
 type GameState = 'playing' | 'gameOver';
 type PrincipalState = 'safe' | 'warning' | 'danger';
+type Heart = {
+    id: number;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+};
 
 export default function GizliAskGame() {
     const [gameState, setGameState] = useState<GameState>('playing');
@@ -12,11 +19,46 @@ export default function GizliAskGame() {
     const [score, setScore] = useState(0);
     const [highScore, setHighScore] = useState(0);
     const [principalState, setPrincipalState] = useState<PrincipalState>('safe');
+    const [hearts, setHearts] = useState<Heart[]>([]);
 
     const principalTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
     const warningTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
     const dangerTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
     const scoreIntervalRef = useRef<NodeJS.Timeout | undefined>(undefined);
+
+    // Audio refs
+    const bgmRef = useRef<HTMLAudioElement | null>(null);
+    const kissRef = useRef<HTMLAudioElement | null>(null);
+    const alertRef = useRef<HTMLAudioElement | null>(null);
+    const whooshRef = useRef<HTMLAudioElement | null>(null);
+    const bgmStartedRef = useRef(false);
+
+    // Initialize audio objects
+    useEffect(() => {
+        bgmRef.current = new Audio('/bgm.mp3');
+        bgmRef.current.loop = true;
+        bgmRef.current.volume = 0.4;
+
+        kissRef.current = new Audio('/kiss.mp3');
+        kissRef.current.loop = true;
+
+        alertRef.current = new Audio('/alert.mp3');
+        whooshRef.current = new Audio('/whoosh.mp3');
+
+        return () => {
+            // Cleanup audio on unmount
+            if (bgmRef.current) {
+                bgmRef.current.pause();
+                bgmRef.current = null;
+            }
+            if (kissRef.current) {
+                kissRef.current.pause();
+                kissRef.current = null;
+            }
+            if (alertRef.current) alertRef.current = null;
+            if (whooshRef.current) whooshRef.current = null;
+        };
+    }, []);
 
     // Load high score from localStorage
     useEffect(() => {
@@ -97,6 +139,82 @@ export default function GizliAskGame() {
         }
     }, [isKissing, principalState, gameState]);
 
+    // Background music - start on first interaction
+    useEffect(() => {
+        if (isKissing && !bgmStartedRef.current && bgmRef.current) {
+            bgmRef.current.play().catch(err => console.log('BGM autoplay blocked:', err));
+            bgmStartedRef.current = true;
+        }
+    }, [isKissing]);
+
+    // Kissing sound - loop while kissing
+    useEffect(() => {
+        if (kissRef.current) {
+            if (isKissing && gameState === 'playing') {
+                kissRef.current.currentTime = 0;
+                kissRef.current.play().catch(err => console.log('Kiss sound error:', err));
+            } else {
+                kissRef.current.pause();
+                kissRef.current.currentTime = 0;
+            }
+        }
+    }, [isKissing, gameState]);
+
+    // Warning sound - play when principal enters warning state
+    useEffect(() => {
+        if (principalState === 'warning' && alertRef.current) {
+            alertRef.current.currentTime = 0;
+            alertRef.current.play().catch(err => console.log('Alert sound error:', err));
+        }
+    }, [principalState]);
+
+    // Whoosh sound - play when principal turns to danger
+    useEffect(() => {
+        if (principalState === 'danger' && whooshRef.current) {
+            whooshRef.current.currentTime = 0;
+            whooshRef.current.play().catch(err => console.log('Whoosh sound error:', err));
+        }
+    }, [principalState]);
+
+    // Spawn hearts while kissing
+    useEffect(() => {
+        if (isKissing && gameState === 'playing') {
+            const heartInterval = setInterval(() => {
+                const newHeart: Heart = {
+                    id: Date.now() + Math.random(),
+                    x: 0, // Will be positioned relative to couple
+                    y: 0,
+                    vx: (Math.random() - 0.5) * 4, // Random horizontal velocity
+                    vy: -2 - Math.random() * 2, // Upward velocity
+                };
+                setHearts(prev => [...prev, newHeart]);
+
+                // Remove heart after animation completes
+                setTimeout(() => {
+                    setHearts(prev => prev.filter(h => h.id !== newHeart.id));
+                }, 2000);
+            }, 200); // Spawn a heart every 200ms
+
+            return () => clearInterval(heartInterval);
+        }
+    }, [isKissing, gameState]);
+
+    // Animate hearts
+    useEffect(() => {
+        if (hearts.length === 0) return;
+
+        const animationInterval = setInterval(() => {
+            setHearts(prev => prev.map(heart => ({
+                ...heart,
+                x: heart.x + heart.vx,
+                y: heart.y + heart.vy,
+                vy: heart.vy + 0.1, // Gravity effect
+            })));
+        }, 16); // ~60fps
+
+        return () => clearInterval(animationInterval);
+    }, [hearts.length]);
+
     const handleMouseDown = () => {
         if (gameState === 'playing') {
             setIsKissing(true);
@@ -168,22 +286,44 @@ export default function GizliAskGame() {
             {/* Main Game Scene Container */}
             <div className="absolute inset-0 flex items-center justify-center">
                 {/* Couple - Center Stage (Focal Point) */}
-                <div className="absolute flex items-center justify-center">
-                    <Image
-                        src={isKissing ? "/image2.png" : "/image1.png"}
-                        alt={isKissing ? "Öpüşen çift" : "Çift"}
-                        width={300}
-                        height={300}
-                        priority
-                        draggable={false}
-                        className="object-contain mt-100 w-90 h-90 "
-                        style={{
-                            imageRendering: 'pixelated',
-                            WebkitTouchCallout: 'none',
-                            WebkitUserSelect: 'none',
-                            pointerEvents: 'none'
-                        }}
-                    />
+                {/* Couple and Hearts Container */}
+                <div className="absolute flex items-center justify-center pointer-events-none">
+                    <div className="relative mt-100 w-90 h-90 flex items-center justify-center">
+                        {/* Couple Image */}
+                        <Image
+                            src={isKissing ? "/image2.png" : "/image1.png"}
+                            alt={isKissing ? "Öpüşen çift" : "Çift"}
+                            width={300}
+                            height={300}
+                            priority
+                            draggable={false}
+                            className="w-full h-full object-contain pointer-events-auto"
+                            style={{
+                                imageRendering: 'pixelated',
+                                WebkitTouchCallout: 'none',
+                                WebkitUserSelect: 'none'
+                            }}
+                        />
+
+                        {/* Hearts particles */}
+                        {hearts.map(heart => (
+                            <Image
+                                key={heart.id}
+                                src="/heart.png"
+                                alt="Heart"
+                                width={30}
+                                height={30}
+                                className="absolute pointer-events-none"
+                                style={{
+                                    left: '50%',
+                                    top: '50%',
+                                    transform: `translate(-50%, -50%) translate(${heart.x}px, ${heart.y}px)`,
+                                    opacity: Math.max(0, 1 - Math.abs(heart.y) / 100),
+                                    imageRendering: 'pixelated',
+                                }}
+                            />
+                        ))}
+                    </div>
                 </div>
 
                 {/* Principal - Foreground (Bottom, Smaller for Perspective) */}
