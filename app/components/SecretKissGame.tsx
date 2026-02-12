@@ -13,10 +13,10 @@ export default function GizliAskGame() {
     const [highScore, setHighScore] = useState(0);
     const [principalState, setPrincipalState] = useState<PrincipalState>('safe');
 
-    const principalTimerRef = useRef<NodeJS.Timeout>();
-    const warningTimerRef = useRef<NodeJS.Timeout>();
-    const dangerTimerRef = useRef<NodeJS.Timeout>();
-    const scoreIntervalRef = useRef<NodeJS.Timeout>();
+    const principalTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
+    const warningTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
+    const dangerTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
+    const scoreIntervalRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
     // Load high score from localStorage
     useEffect(() => {
