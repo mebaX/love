@@ -175,8 +175,14 @@ export default function GizliAskGame() {
                         width={300}
                         height={300}
                         priority
+                        draggable={false}
                         className="object-contain mt-100 w-90 h-90 "
-                        style={{ imageRendering: 'pixelated' }}
+                        style={{
+                            imageRendering: 'pixelated',
+                            WebkitTouchCallout: 'none',
+                            WebkitUserSelect: 'none',
+                            pointerEvents: 'none'
+                        }}
                     />
                 </div>
 
@@ -188,8 +194,14 @@ export default function GizliAskGame() {
                         width={200}
                         height={200}
                         priority
+                        draggable={false}
                         className="object-contain w-110 h-110 mb-80"
-                        style={{ imageRendering: 'pixelated' }}
+                        style={{
+                            imageRendering: 'pixelated',
+                            WebkitTouchCallout: 'none',
+                            WebkitUserSelect: 'none',
+                            pointerEvents: 'none'
+                        }}
                     />
                 </div>
             </div>
