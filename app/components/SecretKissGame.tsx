@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import Image from 'next/image';
 
 type GameState = 'playing' | 'gameOver';
@@ -11,6 +11,7 @@ type Heart = {
     y: number;
     vx: number;
     vy: number;
+    createdAt: number;
 };
 
 const GAME_OVER_MESSAGES = [
@@ -26,9 +27,22 @@ export default function GizliAskGame() {
     const [gameOverMessage, setGameOverMessage] = useState('');
     const [isKissing, setIsKissing] = useState(false);
     const [score, setScore] = useState(0);
-    const [highScore, setHighScore] = useState(0);
+    // Load high score from localStorage (lazy initialization)
+    const [highScore, setHighScore] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('gizliAskHighScore');
+            return saved ? parseInt(saved) : 0;
+        }
+        return 0;
+    });
     const [principalState, setPrincipalState] = useState<PrincipalState>('safe');
     const [hearts, setHearts] = useState<Heart[]>([]);
+
+    // Determine current HighScore Ref to use in loop
+    const highScoreRef = useRef(highScore);
+    useEffect(() => {
+        highScoreRef.current = highScore;
+    }, [highScore]);
 
     // To access state inside timeouts without dependencies
     const isKissingRef = useRef(false);
@@ -81,19 +95,21 @@ export default function GizliAskGame() {
         };
     }, []);
 
-    // Load high score from localStorage
-    useEffect(() => {
-        const saved = localStorage.getItem('gizliAskHighScore');
-        if (saved) setHighScore(parseInt(saved));
-    }, []);
+    // Removed load/save high score effects - now handled in game logic
 
-    // Update high score
-    useEffect(() => {
-        if (score > highScore) {
-            setHighScore(score);
-            localStorage.setItem('gizliAskHighScore', score.toString());
+    const handleGameOver = useCallback(() => {
+        setGameState('gameOver');
+        setGameOverMessage(GAME_OVER_MESSAGES[Math.floor(Math.random() * GAME_OVER_MESSAGES.length)]);
+
+        if (loseRef.current) {
+            loseRef.current.currentTime = 0;
+            loseRef.current.play().catch(err => console.log('Lose sound error:', err));
         }
-    }, [score, highScore]);
+        if (bgmRef.current) {
+            bgmRef.current.pause();
+            bgmRef.current.currentTime = 0;
+        }
+    }, []);
 
     // Principal random turn logic
     useEffect(() => {
@@ -112,7 +128,7 @@ export default function GizliAskGame() {
 
                     // Check if caught
                     if (isKissingRef.current) {
-                        setGameState('gameOver');
+                        handleGameOver();
                         return;
                     }
 
@@ -121,7 +137,7 @@ export default function GizliAskGame() {
                     dangerTimerRef.current = setTimeout(() => {
                         // Check again if caught during danger phase
                         if (isKissingRef.current) {
-                            setGameState('gameOver');
+                            handleGameOver();
                         } else {
                             setPrincipalState('safe');
                             scheduleNextTurn();
@@ -138,13 +154,20 @@ export default function GizliAskGame() {
             if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
             if (dangerTimerRef.current) clearTimeout(dangerTimerRef.current);
         };
-    }, [gameState]);
+    }, [gameState, handleGameOver]);
 
     // Score increment while kissing
     useEffect(() => {
         if (isKissing && gameState === 'playing') {
             scoreIntervalRef.current = setInterval(() => {
-                setScore(s => s + 1);
+                setScore(s => {
+                    const newScore = s + 1;
+                    if (newScore > highScoreRef.current) {
+                        setHighScore(newScore);
+                        localStorage.setItem('gizliAskHighScore', newScore.toString());
+                    }
+                    return newScore;
+                });
             }, 50); // 20 points per second
 
             return () => {
@@ -154,11 +177,7 @@ export default function GizliAskGame() {
     }, [isKissing, gameState]);
 
     // Check if caught during kissing
-    useEffect(() => {
-        if (isKissing && principalState === 'danger' && gameState === 'playing') {
-            setGameState('gameOver');
-        }
-    }, [isKissing, principalState, gameState]);
+
 
     // Background music - start on first interaction
     useEffect(() => {
@@ -205,76 +224,86 @@ export default function GizliAskGame() {
         }
     }, [principalState]);
 
-    // Lose sound & message - play on game over, stop bgm
-    useEffect(() => {
-        if (gameState === 'gameOver') {
-            setGameOverMessage(GAME_OVER_MESSAGES[Math.floor(Math.random() * GAME_OVER_MESSAGES.length)]);
+    // Removed separate lose sound effect as it's handled in handleGameOver
 
-            if (loseRef.current) {
-                loseRef.current.currentTime = 0;
-                loseRef.current.play().catch(err => console.log('Lose sound error:', err));
+    // Unified Game Loop for Hearts & Score
+    useEffect(() => {
+        let animationFrameId: number;
+        let lastTime = performance.now();
+        let heartSpawnTimer = 0;
+
+        const loop = (time: number) => {
+            const deltaTime = time - lastTime;
+            lastTime = time;
+
+            if (gameState === 'playing') {
+                // Score Update logic (approx every 50ms)
+                if (isKissingRef.current) {
+                    // Score is updated via separate interval still or can be moved here. 
+                    // Keeping score separate for now to minimize complexity, but heart logic moves here.
+                }
+
+                // Spawn Hearts
+                if (isKissingRef.current) {
+                    heartSpawnTimer += deltaTime;
+                    if (heartSpawnTimer >= 200) { // Spawn every 200ms
+                        const newHeart: Heart = {
+                            id: Date.now() + Math.random(),
+                            x: 0,
+                            y: 0,
+                            vx: (Math.random() - 0.5) * 4,
+                            vy: -2 - Math.random() * 2,
+                            createdAt: Date.now() // Add creation time for cleanup
+                        };
+                        setHearts(prev => [...prev, newHeart]);
+                        heartSpawnTimer = 0;
+                    }
+                }
+
+                // Update Hearts
+                setHearts(prevHearts => {
+                    if (prevHearts.length === 0) return prevHearts;
+
+                    const now = Date.now();
+                    return prevHearts
+                        .filter(heart => now - heart.createdAt < 2000) // Remove after 2s
+                        .map(heart => ({
+                            ...heart,
+                            x: heart.x + heart.vx,
+                            y: heart.y + heart.vy,
+                            vy: heart.vy + 0.1, // Gravity
+                        }));
+                });
             }
-            if (bgmRef.current) {
-                bgmRef.current.pause();
-                bgmRef.current.currentTime = 0;
-            }
-        }
-    }, [gameState]);
 
-    // Spawn hearts while kissing
-    useEffect(() => {
-        if (isKissing && gameState === 'playing') {
-            const heartInterval = setInterval(() => {
-                const newHeart: Heart = {
-                    id: Date.now() + Math.random(),
-                    x: 0, // Will be positioned relative to couple
-                    y: 0,
-                    vx: (Math.random() - 0.5) * 4, // Random horizontal velocity
-                    vy: -2 - Math.random() * 2, // Upward velocity
-                };
-                setHearts(prev => [...prev, newHeart]);
+            animationFrameId = requestAnimationFrame(loop);
+        };
 
-                // Remove heart after animation completes
-                setTimeout(() => {
-                    setHearts(prev => prev.filter(h => h.id !== newHeart.id));
-                }, 2000);
-            }, 200); // Spawn a heart every 200ms
+        animationFrameId = requestAnimationFrame(loop);
 
-            return () => clearInterval(heartInterval);
-        }
-    }, [isKissing, gameState]);
+        return () => cancelAnimationFrame(animationFrameId);
+    }, [gameState]); // Removed isKissing dependency to avoid resetting loop, using Ref instead
 
-    // Animate hearts
-    useEffect(() => {
-        if (hearts.length === 0) return;
-
-        const animationInterval = setInterval(() => {
-            setHearts(prev => prev.map(heart => ({
-                ...heart,
-                x: heart.x + heart.vx,
-                y: heart.y + heart.vy,
-                vy: heart.vy + 0.1, // Gravity effect
-            })));
-        }, 16); // ~60fps
-
-        return () => clearInterval(animationInterval);
-    }, [hearts.length]);
-
-    const handleMouseDown = () => {
+    const handleMouseDown = useCallback(() => {
         if (gameState === 'playing') {
-            setIsKissing(true);
+            if (principalState === 'danger') {
+                handleGameOver();
+            } else {
+                setIsKissing(true);
+            }
         }
-    };
+    }, [gameState, principalState, handleGameOver]);
 
-    const handleMouseUp = () => {
+    const handleMouseUp = useCallback(() => {
         setIsKissing(false);
-    };
+    }, []);
 
-    const resetGame = () => {
+    const resetGame = useCallback(() => {
         setGameState('playing');
         setIsKissing(false);
         setScore(0);
         setPrincipalState('safe');
+        setHearts([]); // Clear hearts on reset
 
         // Stop lose sound
         if (loseRef.current) {
@@ -287,7 +316,7 @@ export default function GizliAskGame() {
             bgmRef.current.currentTime = 0;
             bgmRef.current.play().catch(console.error);
         }
-    };
+    }, []);
 
     return (
         <div
