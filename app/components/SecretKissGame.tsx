@@ -106,7 +106,7 @@ export default function GizliAskGame() {
                             scheduleNextTurn();
                         }
                     }, dangerDuration);
-                }, 500); // 0.5 second warning
+                }, 1000); // 1 second warning
             }, delay);
         };
 
