@@ -13,8 +13,17 @@ type Heart = {
     vy: number;
 };
 
+const GAME_OVER_MESSAGES = [
+    "ONUR BEY SENİ DİSİPLİNE GÖTÜRDÜ!",
+    "YAKALANDIN!",
+    "DİSİPLİN!!!",
+    "KAYBETTİN!",
+    "OKULDAN ATILDIN!"
+];
+
 export default function GizliAskGame() {
     const [gameState, setGameState] = useState<GameState>('playing');
+    const [gameOverMessage, setGameOverMessage] = useState('');
     const [isKissing, setIsKissing] = useState(false);
     const [score, setScore] = useState(0);
     const [highScore, setHighScore] = useState(0);
@@ -37,6 +46,7 @@ export default function GizliAskGame() {
     const kissRef = useRef<HTMLAudioElement | null>(null);
     const alertRef = useRef<HTMLAudioElement | null>(null);
     const whooshRef = useRef<HTMLAudioElement | null>(null);
+    const loseRef = useRef<HTMLAudioElement | null>(null);
     const bgmStartedRef = useRef(false);
 
     // Initialize audio objects
@@ -50,6 +60,7 @@ export default function GizliAskGame() {
 
         alertRef.current = new Audio('/alert.mp3');
         whooshRef.current = new Audio('/whoosh.mp3');
+        loseRef.current = new Audio('/lose.mp3');
 
         return () => {
             // Cleanup audio on unmount
@@ -63,6 +74,10 @@ export default function GizliAskGame() {
             }
             if (alertRef.current) alertRef.current = null;
             if (whooshRef.current) whooshRef.current = null;
+            if (loseRef.current) {
+                loseRef.current.pause();
+                loseRef.current = null;
+            }
         };
     }, []);
 
@@ -190,6 +205,22 @@ export default function GizliAskGame() {
         }
     }, [principalState]);
 
+    // Lose sound & message - play on game over, stop bgm
+    useEffect(() => {
+        if (gameState === 'gameOver') {
+            setGameOverMessage(GAME_OVER_MESSAGES[Math.floor(Math.random() * GAME_OVER_MESSAGES.length)]);
+
+            if (loseRef.current) {
+                loseRef.current.currentTime = 0;
+                loseRef.current.play().catch(err => console.log('Lose sound error:', err));
+            }
+            if (bgmRef.current) {
+                bgmRef.current.pause();
+                bgmRef.current.currentTime = 0;
+            }
+        }
+    }, [gameState]);
+
     // Spawn hearts while kissing
     useEffect(() => {
         if (isKissing && gameState === 'playing') {
@@ -244,6 +275,18 @@ export default function GizliAskGame() {
         setIsKissing(false);
         setScore(0);
         setPrincipalState('safe');
+
+        // Stop lose sound
+        if (loseRef.current) {
+            loseRef.current.pause();
+            loseRef.current.currentTime = 0;
+        }
+
+        // Restart bgm
+        if (bgmRef.current) {
+            bgmRef.current.currentTime = 0;
+            bgmRef.current.play().catch(console.error);
+        }
     };
 
     return (
@@ -375,7 +418,7 @@ export default function GizliAskGame() {
                 <div className="absolute inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
                     <div className="bg-gradient-to-b from-red-800 to-red-900 rounded-2xl p-8 sm:p-12 text-center max-w-sm sm:max-w-lg mx-4 shadow-2xl border-4 border-yellow-500">
                         <h1 className="text-5xl sm:text-7xl font-bold text-yellow-400 mb-6 animate-pulse" style={{ fontFamily: 'monospace' }}>
-                            YAKALANDIN!
+                            {gameOverMessage}
                         </h1>
                         <div className="text-2xl sm:text-3xl mb-3 text-white font-bold" style={{ fontFamily: 'monospace' }}>
                             PUAN: <span className="text-yellow-400">{score}</span>
